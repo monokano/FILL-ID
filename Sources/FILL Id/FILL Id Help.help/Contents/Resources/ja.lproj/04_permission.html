@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="AppleTitle" content="権限とトラブルシューティング">
+<title>権限とトラブルシューティング</title>
+<link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+<p class="breadcrumb"><a href="index.html">FILL Id ヘルプ</a> › 権限とトラブルシューティング</p>
+<h1>権限とトラブルシューティング</h1>
+
+<h2>オートメーション（Apple Events）の許可</h2>
+<p>FILL Id が InDesign を操作するには、オートメーション（Apple Events）の許可が必要です。初めてクリーンペーストなどを実行したときに許可を求めるダイアログが表示されるので、「OK」を選んでください。</p>
+<p>許可していない場合は、メニューバーや Dock のメニューに「⚠️ オートメーション権限が必要（InDesign）」と表示されます。クリックすると「システム設定 › プライバシーとセキュリティ › オートメーション」が開きます。FILL Id から InDesign への項目をオンにしてください。</p>
+<div class="note">
+  <strong>ヒント</strong>
+  オートメーションの許可は「FILL Id から InDesign へ」の組み合わせごとに記録されます。InDesign は全バージョンが同じ識別子のため、一度許可すればすべてのバージョンに適用される見込みです。
+</div>
+<div class="note">
+  <strong>メモ</strong>
+  FILL Id はアクセシビリティ権限を必要としません。
+</div>
+
+<h2>うまく動かないとき</h2>
+<dl>
+  <dt>ホットキーがまったく効かない</dt>
+  <dd>InDesign が最前面になっているか確認してください。FILL Id のホットキーは、InDesign が最前面のときだけ有効です。</dd>
+
+  <dt>特定の機能だけ効かない</dt>
+  <dd><a href="03_settings.html">設定</a>の「機能」で、その機能がオンになっているか確認してください。グリッドとガイドの表示切替は、「ドキュメント表示設定」の「表示切替を有効にする」がオンになっている必要があります。</dd>
+
+  <dt>クリーンペーストやズームが動かない</dt>
+  <dd>オートメーションの許可（上記）を確認してください。また、全体表示やズームのショートカットは、テンキー（数字キーパッド）の 0、＋、− を使います。</dd>
+
+  <dt>メニューバーアイコンが見当たらない</dt>
+  <dd>表示モードが「Dock のみ」になっているか、ノッチでアイコンが隠れている可能性があります。<kbd>⌘</kbd> を押しながら FILL Id を起動すると、表示モードを初期状態（メニューバーと Dock）に戻せます。</dd>
+</dl>
+</body>
+</html>

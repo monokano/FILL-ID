@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="AppleTitle" content="FILL Id について">
+<title>FILL Id について</title>
+<link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+<p class="breadcrumb"><a href="index.html">FILL Id ヘルプ</a> › FILL Id について</p>
+<h1>FILL Id について</h1>
+
+<h2>何をするアプリか</h2>
+<p>FILL Id は、Adobe InDesign の機能にないペーストや表示の操作を、ホットキー（ショートカットキー）で実行するユーティリティアプリです。常駐して動作し、InDesign が最前面のときだけホットキーが有効になります。</p>
+<p>主な機能は次の4つです。</p>
+<ul>
+  <li><strong>クリーンペースト</strong>：クリップボードの文字を、貼り付け先の先頭の書式を保ったまま選択範囲へ流し込みます。InDesign 標準の「書式なしでペースト」は、ルビが残る、貼り付け先の先頭の書式にならない、互換漢字が統合漢字に変わるといった困った仕様ですが、FILL Id のクリーンペーストはルビが残らず、先頭の書式になり、互換漢字も保護します。</li>
+  <li><strong>全体表示</strong>：ページ／見開き全体を表示します。InDesign 標準の <kbd>⌘0</kbd> はメインキーボードの <kbd>0</kbd> でしか効きませんが、FILL Id ではテンキーの <kbd>0</kbd> でも実行できます。</li>
+  <li><strong>ズーム</strong>：拡大／縮小します。InDesign 標準の <kbd>⌘＋</kbd> / <kbd>⌘−</kbd> はメインキーボードの <kbd>＋</kbd> / <kbd>−</kbd> でしか効きませんが、FILL Id ではテンキーの <kbd>＋</kbd> / <kbd>−</kbd> でも実行できます。</li>
+  <li><strong>グリッドとガイドの表示切替</strong>：あらかじめ決めたグリッドやガイドの表示／非表示をまとめて切り替えます。</li>
+</ul>
+<p>各機能の操作は<a href="02_howto.html">使い方</a>を、ON/OFF や細かい設定は<a href="03_settings.html">設定</a>をご覧ください。</p>
+
+<h2>動作の条件</h2>
+<p>FILL Id のホットキーは、<strong>InDesign が最前面のときだけ</strong>有効になります。InDesign 以外のアプリを操作している間はホットキーが無効になり、ふだんのキー操作を妨げません。</p>
+<div class="note">
+  <strong>注意</strong>
+  FILL Id が InDesign を操作するには、オートメーション（Apple Events）の許可が必要です。詳しくは<a href="04_permission.html">権限とトラブルシューティング</a>をご覧ください。
+</div>
+
+<h2>常駐とメニュー</h2>
+<p>FILL Id はメニューバーや Dock に常駐します。メニューバーのアイコン、または Dock アイコンのメニューから、次の項目を開けます。</p>
+<dl>
+  <dt>設定…</dt>
+  <dd>各機能の ON/OFF や動作の設定。</dd>
+  <dt>ドキュメント表示設定…</dt>
+  <dd>グリッドとガイドの表示切替の設定。</dd>
+  <dt>更新履歴</dt>
+  <dd>変更履歴を表示します。</dd>
+</dl>
+<p>メニューバーに表示するか Dock に表示するかは、<a href="03_settings.html">設定</a>の「表示モード」で選べます。</p>
+</body>
+</html>

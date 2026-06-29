@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="AppleTitle" content="Permissions and Troubleshooting">
+<title>Permissions and Troubleshooting</title>
+<link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+<p class="breadcrumb"><a href="index.html">FILL Id Help</a> › Permissions and Troubleshooting</p>
+<h1>Permissions and Troubleshooting</h1>
+
+<h2>Automation (Apple Events) permission</h2>
+<p>To control InDesign, FILL Id needs Automation (Apple Events) permission. The first time you run clean paste or another command, a dialog asks for permission; choose "OK."</p>
+<p>If permission has not been granted, the menu bar and Dock menus show "⚠️ Automation permission required (InDesign)." Clicking it opens "System Settings › Privacy &amp; Security › Automation." Turn on the item for FILL Id controlling InDesign.</p>
+<div class="note">
+  <strong>Tip</strong>
+  Automation permission is recorded per pair of "FILL Id to InDesign." Because all versions of InDesign share the same identifier, granting it once is expected to apply to every version.
+</div>
+<div class="note">
+  <strong>Note</strong>
+  FILL Id does not require Accessibility permission.
+</div>
+
+<h2>When things don't work</h2>
+<dl>
+  <dt>No hotkeys work at all</dt>
+  <dd>Check that InDesign is frontmost. FILL Id's hotkeys are active only while InDesign is frontmost.</dd>
+
+  <dt>Only a specific feature doesn't work</dt>
+  <dd>Under "Features" in <a href="03_settings.html">Settings</a>, check that the feature is on. For toggling grids and guides, "Enable display toggle" in Document Display Settings must be on.</dd>
+
+  <dt>Clean paste or zoom doesn't work</dt>
+  <dd>Check the Automation permission above. Also, the shortcuts for Fit and Zoom use the numeric keypad keys 0, +, and −.</dd>
+
+  <dt>The menu bar icon is missing</dt>
+  <dd>The display mode may be set to "Dock Only," or the icon may be hidden behind the notch. Hold the <kbd>⌘</kbd> key while starting FILL Id to reset the display mode to the initial state (Menu Bar and Dock).</dd>
+</dl>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="AppleTitle" content="How to Use">
+<title>How to Use</title>
+<link rel="stylesheet" href="../shared/style.css">
+</head>
+<body>
+<p class="breadcrumb"><a href="index.html">FILL Id Help</a> › How to Use</p>
+<h1>How to Use</h1>
+
+<p>FILL Id's hotkeys work while InDesign is frontmost. You can turn each feature on or off individually under "Features" in <a href="03_settings.html">Settings</a> (all on by default).</p>
+
+<h2>Hotkey list</h2>
+<dl>
+  <dt><kbd>⌥V</kbd> Clean paste</dt>
+  <dd>Pastes the text on the clipboard into the selection.</dd>
+
+  <dt><kbd>⇧⌥V</kbd> Clean paste (trim surrounding whitespace)</dt>
+  <dd>Removes whitespace and line breaks from the start and end of the text before pasting.</dd>
+
+  <dt><kbd>⌘0</kbd> Fit page / <kbd>⌥⌘0</kbd> Fit spread</dt>
+  <dd>Fits the page or spread in the window.</dd>
+
+  <dt><kbd>⌘＋</kbd> / <kbd>⌘−</kbd> Zoom in / out (deselect)</dt>
+  <dd>Deselects first, then zooms in or out.</dd>
+
+  <dt><kbd>⇧⌘＋</kbd> / <kbd>⇧⌘−</kbd> Zoom in / out (keep selection)</dt>
+  <dd>Zooms in or out while keeping the selection.</dd>
+
+  <dt><kbd>F13</kbd> (default) Toggle grids &amp; guides</dt>
+  <dd>Shows or hides the preset items all at once. The toggle key can be changed.</dd>
+</dl>
+
+<div class="note">
+  <strong>Tip</strong>
+  In InDesign, the shortcuts for Fit (⌘0 / ⌥⌘0) and Zoom (⌘＋ / ⌘−) work only with the main keyboard's number keys. FILL Id also makes them work with the <b>numeric keypad</b> keys 0, +, and −.
+</div>
+
+<h2>Clean paste</h2>
+<p>Clean paste pastes the text on the clipboard into the selection. It does not bring over the source's formatting such as font or color; instead it keeps the formatting at the paste destination (the first character of the selection) and replaces only the text.</p>
+<p>InDesign's built-in "Paste without Formatting" keeps ruby, does not adopt the destination's first-character formatting, and converts compatibility ideographs to unified ideographs. Clean paste removes those often-unwanted behaviors. It replaces the selection's contents with InDesign's scripting, so it does not depend on InDesign's paste behavior.</p>
+<ul>
+  <li>Text is normalized with Unicode NFC before pasting. The purpose is to compose combining character sequences, but compatibility ideographs and similar characters are protected so they are not altered.</li>
+  <li>Line breaks are converted to CR.</li>
+  <li>With <kbd>⇧⌥V</kbd>, whitespace and line breaks at the start and end are removed before pasting.</li>
+</ul>
+<div class="note">
+  <strong>Note</strong>
+  Pasting is not supported when table cells are selected.
+</div>
+
+<h3>Characters that cannot be composed</h3>
+<p>Even after NFC normalization, combining characters and emoji modifiers can remain without being composed. In addition, when characters that may cause trouble are included, such as Private Use Area characters, a confirmation dialog appears.</p>
+<dl>
+  <dt>Check</dt>
+  <dd>Opens a window that finds and shows each such character one by one.</dd>
+  <dt>Paste</dt>
+  <dd>Performs the clean paste as is.</dd>
+  <dt>Cancel</dt>
+  <dd>Cancels the clean paste.</dd>
+</dl>
+
+<h2>Toggle grids &amp; guides</h2>
+<p>Pressing the toggle key (F13 by default) shows or hides the preset grids and guides all at once.</p>
+<p>You can change the items and the toggle key in <a href="03_settings.html">Document Display Settings</a>.</p>
+</body>
+</html>
