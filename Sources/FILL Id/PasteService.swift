@@ -2,6 +2,9 @@ import AppKit
 
 /// クリーンペースト。旧 `Paste` モジュールの移植。
 /// クリップボード → NFC正規化(合成除外保護) → 改行CR化 → (任意トリム) → 不正文字チェック → InDesign へ流し込み。
+/// カーソル確認と流し込みは 1 本のスクリプトに統合してあり（InDesignController.setText）、
+/// InDesign との往復は通常 1 回で済む。不正文字を含むときだけ、警告を出す前に
+/// カーソル確認（isSetCursor）の往復が 1 回入る（従来挙動の維持）。
 @MainActor
 final class PasteService {
 
@@ -22,7 +25,6 @@ final class PasteService {
 
     /// ペーストを実行する。`target` は発火時に捕捉した InDesign インスタンス。`trim` で前後空白を除去（⇧⌥V）。
     func run(target: InDesignTarget, trim: Bool) {
-        guard indesign.isSetCursor(target) else { return }
         guard let raw = NSPasteboard.general.string(forType: .string), !raw.isEmpty else { return }
 
         var s = TextNormalizer.nfcSafe(raw)
@@ -33,10 +35,16 @@ final class PasteService {
         guard !s.isEmpty else { return }
 
         if BadCharacterScanner.hasBadCharacter(s) {
-            showBadCharacterAlert(s, target: target)
+            // 従来どおり、カーソルがテキストに立っているときだけ警告を出す。
+            indesign.isSetCursor(target) { [weak self] ok in
+                guard ok, let self else { return }
+                self.showBadCharacterAlert(s, target: target)
+            }
         } else {
-            indesign.setText(s, target: target)
-            flashIfEnabled()
+            // 流し込み実行。合図（画面の暗転）は InDesign 側で置換が成立したときだけ出す。
+            indesign.setText(s, target: target) { [weak self] pasted in
+                if pasted { self?.flashIfEnabled() }
+            }
         }
     }
 
@@ -58,9 +66,10 @@ final class PasteService {
         case .alertFirstButtonReturn:   // 確認する
             onShowChecker?(s)
         case .alertSecondButtonReturn:  // ペースト
-            indesign.setText(s, target: target)
-            flashIfEnabled()
-            indesign.activate(target)   // ペースト後に対象 InDesign を前面へ戻す
+            indesign.setText(s, target: target) { [weak self] pasted in
+                if pasted { self?.flashIfEnabled() }
+            }
+            indesign.activate(target)   // 対象 InDesign を前面へ戻す（流し込みはバックグラウンド送信で進行）
         default:                        // 中止
             break
         }

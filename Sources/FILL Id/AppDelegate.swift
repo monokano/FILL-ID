@@ -2,11 +2,18 @@ import AppKit
 import SwiftUI
 import ServiceManagement
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// ⌘起動で表示モードがリセットされた場合に、起動後ダイアログを出すためのフラグ。
     static var shouldShowResetAlert: Bool = false
 
     private var statusItem: NSStatusItem?
+    /// メニューバー用の共通メニュー。1 個を保持して使い回し、権限警告項目の表示/非表示だけを切り替える
+    /// （アプリ切替のたびに再構築しない）。
+    private var statusMenu: NSMenu?
+    /// オートメーション権限警告のキャッシュ。実際のチェック（ブロックし得る IPC）は
+    /// refreshAutomationPermission() がバックグラウンドで行い、メニューはこの値だけを参照する。
+    private var automationWarningNeeded = false
+    private var permissionRefreshInFlight = false
     private var settingsWindow: NSWindow?
     private var inddSettingsWindow: NSWindow?
     private var changeLogWindowController: ChangeLogWindowController?
@@ -24,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminateOtherInstances()   // 二重起動を防ぐ（古い/残存インスタンスを終了）
         Preferences.registerDefaults()
         applyDisplayMode()
+        refreshAutomationPermission()   // 権限状態の初回キャッシュ（バックグラウンドで確認）
 
         hotKeys.onAction = { [weak self] action in self?.perform(action) }
         paste.onShowChecker = { [weak self] text in self?.showChecker(text: text) }
@@ -94,6 +102,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func perform(_ action: HotKeyAction) {
+        // 直前の Apple Event が応答待ちの間は、新しいホットキーを無視する（多重送信ガード）。
+        // ビジーな InDesign へ送り続けると、送信側がタイムアウトしてもイベントは InDesign 側の
+        // キューに残り、後からまとめて実行される（多重ペースト等の事故）。それをここで断つ。
+        guard !indesign.isBusy else {
+            NSLog("[FILL Id] Hotkey ignored: previous InDesign command still awaiting reply")
+            return
+        }
         // 発火時点で最前面の InDesign インスタンスを捕捉し、以降の操作はこの pid を狙う。
         guard let target = indesign.captureFrontmostTarget() else { return }
         switch action {
@@ -116,6 +131,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func displayModeChanged() {
         applyDisplayMode()
+
+        // 「メニューバーのみ」への切替は activationPolicy が .accessory になり、アプリごと
+        // 非アクティブ化されて設定ウィンドウが背面に落ちる。ポリシー変更は非同期に反映されるため、
+        // 直後に activate しても打ち消されることがある。少し遅らせて設定ウィンドウを前面へ戻す。
+        if let window = settingsWindow, window.isVisible {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard window.isVisible else { return }
+                self?.bringToFront(window)
+            }
+        }
     }
 
     // MARK: - 表示モード（メニューバー / Dock / 両方）
@@ -130,7 +155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let needStatusItem = (mode == .menuBar || mode == .both)
         if needStatusItem {
             if statusItem == nil {
-                statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+                let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+                item.button?.image = menuBarIcon()
+                item.menu = ensureStatusMenu()
+                statusItem = item
             }
         } else if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
@@ -139,11 +167,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateAppearance()
     }
 
+    /// 状態表示（ツールチップ）の更新。アプリ切替のたびに呼ばれるので、ここではメニュー再構築や
+    /// 権限チェック（IPC）を行わない（フリーズ対策）。アイコンとメニューは statusItem 生成時に設定済み。
     private func updateAppearance() {
         guard let button = statusItem?.button else { return }
-        button.image = menuBarIcon()
         button.toolTip = stateLabel()
-        statusItem?.menu = buildCommonMenu()
     }
 
     /// メニューバー用アイコン。アプリアイコンをメニューバーサイズへ縮小して使う（カラー）。
@@ -162,7 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         // Dock メニューは「設定…」を上に置く。「終了」は OS が自動付加するのでカスタムでは付けない。
-        buildCommonMenu(settingsOnTop: true, includeQuit: false)
+        // 表示はキャッシュ済みの権限状態を使い、次回の表示に向けてバックグラウンドで確認し直す。
+        refreshAutomationPermission()
+        return buildCommonMenu(settingsOnTop: true, includeQuit: false)
     }
 
     /// メニューバー & Dock 共通メニュー。
@@ -173,14 +203,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildCommonMenu(settingsOnTop: Bool = false, includeQuit: Bool = true) -> NSMenu {
         let menu = NSMenu()
 
-        if needsAutomationWarning() {
-            let warn = NSMenuItem(
-                title: NSLocalizedString("⚠️ Automation permission required (InDesign)", comment: "Automation warning"),
-                action: #selector(openAutomationPrefs), keyEquivalent: "")
-            warn.target = self
-            menu.addItem(warn)
-            menu.addItem(.separator())
-        }
+        // 権限警告の項目は常に持たせ、キャッシュ済みの権限状態で表示/非表示だけを切り替える。
+        // ここでは権限チェック（IPC）を行わない（refreshAutomationPermission() がバックグラウンドで更新）。
+        let warn = NSMenuItem(
+            title: NSLocalizedString("⚠️ Automation permission required (InDesign)", comment: "Automation warning"),
+            action: #selector(openAutomationPrefs), keyEquivalent: "")
+        warn.target = self
+        warn.tag = Self.automationWarningTag
+        warn.isHidden = !automationWarningNeeded
+        let warnSeparator = NSMenuItem.separator()
+        warnSeparator.tag = Self.automationWarningSeparatorTag
+        warnSeparator.isHidden = !automationWarningNeeded
+        menu.addItem(warn)
+        menu.addItem(warnSeparator)
 
         let inddSettings = NSMenuItem(
             title: NSLocalizedString("Document Display Settings...", comment: "document display settings menu item"),
@@ -233,10 +268,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : NSLocalizedString("Waiting for InDesign", comment: "State: idle")
     }
 
-    private func needsAutomationWarning() -> Bool {
-        switch AutomationPermission.state(forBundleID: InDesignController.bundleID) {
-        case .denied, .notDetermined: return true
-        default: return false
+    // MARK: - オートメーション権限（キャッシュ + バックグラウンド更新）
+
+    private static let automationWarningTag = 901
+    private static let automationWarningSeparatorTag = 902
+
+    /// メニューバー用メニューを生成して保持する（初回のみ構築。以後は同じインスタンスを使い回す）。
+    private func ensureStatusMenu() -> NSMenu {
+        if let statusMenu { return statusMenu }
+        let menu = buildCommonMenu()
+        menu.delegate = self
+        statusMenu = menu
+        return menu
+    }
+
+    /// メニューを開くたびに権限状態をバックグラウンドで確認し直す（NSMenuDelegate）。
+    /// 表示にはキャッシュ値を使うので、メニューを開く動作がブロックすることはない。
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshAutomationPermission()
+    }
+
+    /// オートメーション権限のキャッシュを最新化する。
+    /// `AEDeterminePermissionToAutomateTarget` はブロックし得る IPC のため、必ずバックグラウンドで呼び、
+    /// 結果だけをメインスレッドでキャッシュへ反映する（旧実装はアプリ切替のたびにメインスレッドで
+    /// 同期実行しており、InDesign がビジーのときにフリーズする起点だった）。
+    private func refreshAutomationPermission() {
+        guard !permissionRefreshInFlight else { return }
+        permissionRefreshInFlight = true
+        let bundleID = InDesignController.bundleID
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let state = AutomationPermission.state(forBundleID: bundleID)
+            let needsWarning: Bool
+            switch state {
+            case .denied, .notDetermined: needsWarning = true
+            default: needsWarning = false
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.permissionRefreshInFlight = false
+                if self.automationWarningNeeded != needsWarning {
+                    self.automationWarningNeeded = needsWarning
+                    if let menu = self.statusMenu {
+                        self.applyAutomationWarningVisibility(to: menu)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 保持中のメニューの警告項目（本体＋セパレーター）の表示/非表示をキャッシュに合わせる。
+    private func applyAutomationWarningVisibility(to menu: NSMenu) {
+        let hidden = !automationWarningNeeded
+        for item in menu.items
+        where item.tag == Self.automationWarningTag || item.tag == Self.automationWarningSeparatorTag {
+            item.isHidden = hidden
         }
     }
 

@@ -10,10 +10,25 @@ struct InDesignTarget {
 }
 
 /// InDesign 連携。`do script`（JavaScript）を **pid 指定の Apple Event** で送る（HANDOFF.md §8.1）。
+///
+/// 送信は専用のシリアルキューで行い、**メインスレッドをブロックしない**（フリーズ対策）。
+/// InDesign がビジーで応答しなくても、固まるのはバックグラウンドのキューだけで、
+/// UI・メニュー・最前面監視は生きたまま。結果が要る操作は completion（メインスレッド）で受け取る。
 @MainActor
 final class InDesignController {
 
     static let bundleID = "com.adobe.InDesign"
+
+    /// Apple Event 送信用のシリアルキュー。送信順を保証するため 1 本に直列化する。
+    private let sendQueue = DispatchQueue(label: "com.tama-san.FILLId.indesign-ae", qos: .userInitiated)
+
+    /// 応答待ち中の Apple Event の数（メインスレッドで読み書き）。
+    private var inFlightCount = 0
+
+    /// InDesign への送信が応答待ち中か。ホットキーの多重発火ガード（AppDelegate.perform）が参照する。
+    /// ビジー中の連打を無視しないと、送信側がタイムアウトしてもイベントは InDesign 側のキューに残り、
+    /// 後からまとめて実行される（多重ペースト等）。
+    var isBusy: Bool { inFlightCount > 0 }
 
     var isFrontmost: Bool {
         NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.bundleID
@@ -36,8 +51,10 @@ final class InDesignController {
 
     // MARK: - 公開操作
 
-    /// 現在の選択がテキスト挿入可能か（旧 IsSetCursor 相当）。
-    func isSetCursor(_ target: InDesignTarget) -> Bool {
+    /// 現在の選択がテキスト挿入可能か（旧 IsSetCursor 相当）。結果はメインスレッドで返す。
+    /// 通常のペーストでは使わない（`setText` がスクリプト内で同じ確認を行う）。
+    /// 不正文字の警告を出す前の事前確認にのみ使う。
+    func isSetCursor(_ target: InDesignTarget, completion: @escaping @MainActor (Bool) -> Void) {
         let js = """
         var ok=false;
         if(app.documents.length>0 && app.selection.length>0){
@@ -46,30 +63,40 @@ final class InDesignController {
         }
         ok;
         """
-        return runJavaScript(js, target: target, wantsResult: true)?.booleanValue ?? false
+        runJavaScript(js, target: target) { reply in
+            completion(reply?.booleanValue ?? false)
+        }
     }
 
     /// 選択範囲の contents を直接置換する（⌘V は送らない）。undo mode=fast entire script で 1 回の Undo にまとめる。
+    /// カーソル確認（旧 isSetCursor）と置換を 1 本のスクリプトに統合し、InDesign との往復を 1 回にしている。
+    /// テキスト系の選択でなければ何もせず、completion に false を返す。
     /// 空（""）にはせず**先頭1文字を残してから**置換することで、選択範囲（先頭文字）の書式を保持する。
     /// （`contents=""` で空にすると書式の拠り所が消え、挿入位置の書式を拾って選択範囲の書式が落ちることがある。）
-    /// 仕上げに `parentStory.recompose()` で再組版を明示的に走らせる。
     /// 末尾でキャレットを立てる: 置換“前”に末尾の挿入ポイントを `select()` しておく。
     /// InsertionPoint はテキストに張り付いた生きた参照で、前方の挿入・削除に合わせて自動追従するため、
-    /// 置換後はそのまま挿入テキスト直後にキャレットが残る。文字数を数えないのでサロゲートペアの影響を受けず、
-    /// 60万字規模でも追加コストが無い（`id_モジ入力するだけ.jsx` の `pepsi()` と同方式）。
-    func setText(_ text: String, target: InDesignTarget) {
-        guard !text.isEmpty else { return }
+    /// 置換後はそのまま挿入テキスト直後にキャレットが残る。文字数を数えないのでサロゲートペアの影響を受けない。
+    /// タイムアウトは巨大テキスト（60万字級）の置換に時間がかかり得るため 30 秒とする（他の操作は既定の 5 秒）。
+    func setText(_ text: String, target: InDesignTarget, completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard !text.isEmpty else { completion?(false); return }
         let js = """
-        var t=\(Self.jsString(text));
-        if(app.selection.length>0){
+        var r="";
+        if(app.documents.length>0 && app.selection.length>0){
         var s=app.selection[0];
+        var k=s.constructor.name;
+        if(k=="Text"||k=="InsertionPoint"||k=="Character"||k=="Word"||k=="Line"||k=="Paragraph"||k=="TextStyleRange"||k=="TextColumn"){
+        var t=\(Self.jsString(text));
         s.insertionPoints[-1].select();
         if(s.contents.length>0){s.contents=s.contents.substring(0,1);}
         s.contents=t;
-        try{s.parentStory.recompose();}catch(e){}
+        r="ok";
         }
+        }
+        r;
         """
-        runJavaScript(js, target: target, undo: true)
+        runJavaScript(js, target: target, undo: true, timeout: 30) { reply in
+            completion?(reply?.stringValue == "ok")
+        }
     }
 
     func zoomFitPage(_ t: InDesignTarget)   { runJavaScript("try{app.menuActions.itemByID(118788).invoke();}catch(e){}", target: t) }
@@ -91,32 +118,49 @@ final class InDesignController {
         runJavaScript(js, target: target)
     }
 
-    // MARK: - pid 指定の do script 送信
+    // MARK: - pid 指定の do script 送信（バックグラウンド・シリアルキュー）
 
-    @discardableResult
-    private func runJavaScript(_ js: String, target: InDesignTarget, undo: Bool = false, wantsResult: Bool = false) -> NSAppleEventDescriptor? {
+    /// `do script` をシリアルキューから送信する。completion はメインスレッドで呼ばれる
+    /// （引数は reply の ---- パラメータ。送信失敗・タイムアウト時は nil）。
+    /// タイムアウトの既定は 5 秒。ビジーな InDesign を長く待たず、多重発火ガード（isBusy）を早めに解く。
+    private func runJavaScript(_ js: String, target: InDesignTarget, undo: Bool = false,
+                               timeout: TimeInterval = 5,
+                               completion: (@MainActor (NSAppleEventDescriptor?) -> Void)? = nil) {
+        inFlightCount += 1
+        sendQueue.async {
+            let result = Self.sendDoScript(js, to: target, undo: undo, timeout: timeout)
+            Task { @MainActor in
+                self.inFlightCount -= 1
+                completion?(result)
+            }
+        }
+    }
+
+    /// Apple Event を組み立てて同期送信する。ブロックしてよいバックグラウンドスレッド（sendQueue）から呼ぶ。
+    private nonisolated static func sendDoScript(_ js: String, to target: InDesignTarget,
+                                                 undo: Bool, timeout: TimeInterval) -> NSAppleEventDescriptor? {
         let event = NSAppleEventDescriptor.appleEvent(
-            withEventClass: Self.osType("K2  "),   // InDesign スイート
-            eventID: Self.osType("dosc"),          // do script
+            withEventClass: osType("K2  "),   // InDesign スイート
+            eventID: osType("dosc"),          // do script
             targetDescriptor: NSAppleEventDescriptor(processIdentifier: target.pid),
             returnID: AEReturnID(kAutoGenerateReturnID),
             transactionID: AETransactionID(kAnyTransactionID))
 
         // 直接オブジェクト = スクリプト本体
-        event.setParam(NSAppleEventDescriptor(string: js), forKeyword: Self.osType("----"))
+        event.setParam(NSAppleEventDescriptor(string: js), forKeyword: osType("----"))
         // language = javascript
-        event.setParam(NSAppleEventDescriptor(enumCode: Self.osType("JSLg")), forKeyword: Self.osType("doLg"))
+        event.setParam(NSAppleEventDescriptor(enumCode: osType("JSLg")), forKeyword: osType("doLg"))
         // undo mode = fast entire script
         if undo {
-            event.setParam(NSAppleEventDescriptor(enumCode: Self.osType("eSfU")), forKeyword: Self.osType("pSUM"))
+            event.setParam(NSAppleEventDescriptor(enumCode: osType("eSfU")), forKeyword: osType("pSUM"))
         }
 
         do {
-            let reply = try event.sendEvent(options: [.waitForReply], timeout: 30)
-            if let err = reply.paramDescriptor(forKeyword: Self.osType("errs"))?.stringValue, !err.isEmpty {
+            let reply = try event.sendEvent(options: [.waitForReply], timeout: timeout)
+            if let err = reply.paramDescriptor(forKeyword: osType("errs"))?.stringValue, !err.isEmpty {
                 NSLog("[FILL Id] InDesign script error (%@): %@", target.name, err)
             }
-            return reply.paramDescriptor(forKeyword: Self.osType("----"))
+            return reply.paramDescriptor(forKeyword: osType("----"))
         } catch {
             NSLog("[FILL Id] do script send failed (%@): %@", target.name, error.localizedDescription)
             return nil
@@ -124,7 +168,7 @@ final class InDesignController {
     }
 
     /// 4文字コード→OSType（4文字未満は空白でパディング。例: "K2  "）。
-    private static func osType(_ s: String) -> OSType {
+    private nonisolated static func osType(_ s: String) -> OSType {
         var bytes = Array(s.utf8.prefix(4))
         while bytes.count < 4 { bytes.append(0x20) }
         return bytes.reduce(OSType(0)) { ($0 << 8) + OSType($1) }
@@ -132,7 +176,7 @@ final class InDesignController {
 
     /// 文字列を JavaScript の文字列リテラル（前後のダブルクォート含む）へ。
     /// CR はそのまま `\r`（InDesign の段落区切り）として埋め込む。
-    private static func jsString(_ s: String) -> String {
+    private nonisolated static func jsString(_ s: String) -> String {
         var out = "\""
         for u in s.unicodeScalars {
             switch u {
